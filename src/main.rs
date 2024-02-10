@@ -5,24 +5,43 @@
 
 extern crate alloc;
 
+use alloc::format;
+use alloc::alloc::{GlobalAlloc, Layout};
 use core::arch::{asm};
-use linked_list_allocator::LockedHeap;
 
-pub mod isviewer;
-
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::isviewer::write_fmt(format_args!($($arg)*)));
+fn get_stderr() -> *const u8 {
+    // 0x488 == offset of stderr in _reent
+    unsafe { __getreent().wrapping_add(0x488) }
 }
 
 #[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+macro_rules! eprint {
+    ($($arg:tt)*) => (unsafe { fprintf(get_stderr(), "%s\0".as_ptr(), format!($($arg)*).as_ptr()) });
 }
+
+#[macro_export]
+macro_rules! eprintln {
+    () => ($crate::eprint!("\n"));
+    ($($arg:tt)*) => ($crate::eprint!("{}\n", format_args!($($arg)*)));
+}
+
+pub struct LibdragonAllocator;
 
 #[global_allocator]
-pub static ALLOCATOR: LockedHeap = LockedHeap::empty();
+pub static ALLOCATOR: LibdragonAllocator = LibdragonAllocator {};
+
+unsafe impl GlobalAlloc for LibdragonAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let size = layout.size();
+        let _align = layout.align();
+
+        malloc(size as u32)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        free(ptr);
+    }
+}
 
 #[cfg(not(test))]
 #[alloc_error_handler]
@@ -35,29 +54,20 @@ extern "C" {
     fn _start() -> !;
 
     fn debug_init_isviewer() -> ();
-    fn fprintf(fd: u32, msg: *const u8) -> ();
+
+    fn __getreent() -> *const u8;
+    fn fprintf(fd: *const u8, msg: *const u8, ...) -> u32;
+
+    fn malloc(size: u32) -> *mut u8;
+    fn free(ptr: *mut u8) -> ();
 }
 
 // libdragon's entry point calls C main
 #[no_mangle]
-extern "C" fn main() -> !{
-    rust_entrypoint();
-}
+extern "C" fn main() -> ! { rust_entrypoint(); }
 
 #[no_mangle]
 extern "C" fn rust_entrypoint() -> ! {
-    // this will conflict with libdragon
-    extern "C" {
-        static __bss_end: u32;
-    }
-    
-    let heap_start = (unsafe { &__bss_end as *const u32 as u32 } & 0x1FFF_FFFF) | 0xA000_0000; // uncached and unmapped
-    let heap_size = (4 * 1024 * 1024) - unsafe { __bss_end }; // Remaining unused RDRAM (increase 4 -> 8, if using Expansion Pak)
-    
-    unsafe {
-        ALLOCATOR.lock().init(heap_start as *mut u8, heap_size as usize);
-    }
-    
     rust_main();
     loop {}
 }
@@ -65,9 +75,10 @@ extern "C" fn rust_entrypoint() -> ! {
 fn rust_main() {
     unsafe {
         debug_init_isviewer();
-        fprintf(2, "Hello, world!\n".as_ptr());
     }
     
+    eprintln!("Hello from rust! Here's a number: {}      ", 5u32);
+
     loop {
         unsafe { asm!("nop"); }
     }
@@ -78,7 +89,7 @@ fn rust_main() {
 #[panic_handler]
 #[no_mangle]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
-    println!("panic: {info}");
+    eprintln!("panic: {info}");
     
     loop {}
 }

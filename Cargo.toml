@@ -6,5 +6,3 @@ license = "MIT OR Apache-2.0"
 build = "build.rs"
 
 [dependencies]
-linked_list_allocator = "0.10"
-n64-pac = "0.3"
