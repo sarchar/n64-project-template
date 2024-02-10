@@ -9,7 +9,7 @@
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
   "llvm-abiname": "n32",
-  "llvm-target": "mips-unknown-unknown",
+  "llvm-target": "mips64-unknown-elf",
   "os": "none",
   "panic-strategy": "abort",
   "pre-link-args": {
@@ -21,5 +21,5 @@
   "target-c-int-width": "32",
   "target-endian": "big",
   "target-pointer-width": "32",
-  "vendor": "nintendo64"
+  "vendor": "libdragon"
 }

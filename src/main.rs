@@ -1,4 +1,3 @@
-
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
@@ -6,12 +5,10 @@
 
 extern crate alloc;
 
-use core::arch::{asm, global_asm};
+use core::arch::{asm};
 use linked_list_allocator::LockedHeap;
 
 pub mod isviewer;
-
-global_asm!(include_str!("boot.s"));
 
 #[macro_export]
 macro_rules! print {
@@ -33,8 +30,23 @@ fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
 
+extern "C" {
+    // keep rust optimizer from removing the entry point
+    fn _start() -> !;
+
+    fn debug_init_isviewer() -> ();
+    fn fprintf(fd: u32, msg: *const u8) -> ();
+}
+
+// libdragon's entry point calls C main
+#[no_mangle]
+extern "C" fn main() -> !{
+    rust_entrypoint();
+}
+
 #[no_mangle]
 extern "C" fn rust_entrypoint() -> ! {
+    // this will conflict with libdragon
     extern "C" {
         static __bss_end: u32;
     }
@@ -46,11 +58,15 @@ extern "C" fn rust_entrypoint() -> ! {
         ALLOCATOR.lock().init(heap_start as *mut u8, heap_size as usize);
     }
     
-    main_loop()
+    rust_main();
+    loop {}
 }
 
-fn main_loop() -> ! {
-    println!("Hello World!");
+fn rust_main() {
+    unsafe {
+        debug_init_isviewer();
+        fprintf(2, "Hello, world!\n".as_ptr());
+    }
     
     loop {
         unsafe { asm!("nop"); }
